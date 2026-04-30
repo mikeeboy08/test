@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>WCGNHS Attendance Pro</title>
+    <link rel="icon" type="image/png" href="WCGNHS.png">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="theme-color" content="#1e3a8a">
+    
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;900&display=swap" rel="stylesheet">
+    
+    <style>
+        body { font-family: 'Inter', sans-serif; background-color: #f8fafc; color: #1e3a8a; overflow-x: hidden; -webkit-tap-highlight-color: transparent; }
+        #app-content { display: none; }
+        .app-shell { max-width: 500px; margin: 0 auto; min-height: 100vh; display: flex; flex-direction: column; padding-bottom: 100px; }
+        .card { background: white; border-radius: 24px; border: 1px solid #e2e8f0; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05); }
+        .scanner-container { position: relative; width: 280px; height: 280px; z-index: 20; }
+        .scanner-overlay { position: absolute; inset: 0; background: rgba(0, 0, 0, 0.6); mask: radial-gradient(circle 140px at center, transparent 100%, black 100%); -webkit-mask: radial-gradient(circle 140px at center, transparent 99%, black 100%); }
+        .corner-bracket { position: absolute; width: 30px; height: 30px; border: 4px solid #3b82f6; z-index: 30; }
+        .scan-laser { position: absolute; left: 0; width: 100%; height: 3px; background: linear-gradient(to right, transparent, #3b82f6, transparent); box-shadow: 0 0 15px 2px rgba(59, 130, 246, 0.8); animation: scanning 2s infinite ease-in-out; z-index: 25; }
+        @keyframes scanning { 0%, 100% { top: 0%; } 50% { top: 100%; } }
+        
+        .bottom-nav { position: fixed; bottom: 0; left: 50%; transform: translateX(-50%); width: 100%; max-width: 500px; background: rgba(255, 255, 255, 0.95); backdrop-filter: blur(12px); border-top: 1px solid #e2e8f0; display: flex; justify-content: space-around; padding: 12px 10px 24px 10px; z-index: 100; box-shadow: 0 -10px 25px -5px rgba(0,0,0,0.05); }
+        .nav-item { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; flex: 1; font-size: 10px; font-weight: 800; color: #94a3b8; transition: all 0.2s ease; cursor: pointer; text-transform: uppercase; letter-spacing: 0.02em; }
+        .nav-item.active { color: #2563eb; }
+        .nav-item.logout-color { color: #f43f5e; opacity: 0.7; }
+        .nav-item.logout-color:active { opacity: 1; }
+        .nav-icon { width: 22px; height: 22px; }
+        
+        .btn-press:active { transform: scale(0.96); }
+    </style>
+</head>
+<body onload="checkAuth()">
+
+    <div id="login-overlay" class="fixed inset-0 bg-blue-900 z-[999] flex items-center justify-center p-6">
+        <div class="card w-full max-w-sm p-8 space-y-6">
+            <div class="text-center flex flex-col items-center">
+                <img src="WCGNHS.png" alt="WCGNHS Logo" class="h-16 w-16 mb-4 object-contain">
+                <h1 class="text-2xl font-black text-blue-900 uppercase tracking-tighter">Terminal<span class="text-blue-500"> Login</span></h1>
+            </div>
+            <div class="space-y-4">
+                <input type="text" id="user-input" placeholder="Username" class="w-full bg-slate-50 border border-slate-200 rounded-2xl px-4 py-3 text-sm font-bold outline-none focus:ring-2 focus:ring-blue-500">
+                <input type="password" id="pass-input" placeholder="Password" class="w-full bg-slate-50 border border-slate-200 rounded-2xl px-4 py-3 text-sm font-bold outline-none focus:ring-2 focus:ring-blue-500">
+                <button onclick="handleLogin()" class="btn-press w-full py-4 bg-blue-600 text-white font-black rounded-2xl shadow-lg hover:bg-blue-700 transition-all uppercase tracking-widest text-sm">Sign In</button>
+            </div>
+            <p id="login-error" class="text-center text-red-500 text-[10px] font-bold uppercase hidden">Invalid Credentials</p>
+        </div>
+    </div>
+
+    <div id="app-content">
+        <div class="app-shell px-5 pt-8">
+            <header class="flex justify-between items-center mb-8">
+                <div class="flex items-center gap-3">
+                    <img src="WCGNHS.png" alt="Logo" class="h-10 w-10 object-contain">
+                    <div>
+                        <h1 class="text-xl font-black text-blue-900 tracking-tighter uppercase leading-none">Attendance <span class="text-blue-500">Pro</span></h1>
+                        <p id="active-user-display" class="text-[9px] font-bold text-slate-400 tracking-[0.2em] uppercase mt-1">User: --</p>
+                    </div>
+                </div>
+            </header>
+
+            <div id="main-view">
+                <div class="card p-1.5 flex bg-slate-100 mb-6">
+                    <button onclick="setStatus('Time In')" id="btn-in" class="flex-1 py-3 rounded-2xl text-xs font-black transition-all bg-white text-blue-600 shadow-sm">TIME IN</button>
+                    <button onclick="setStatus('Time Out')" id="btn-out" class="flex-1 py-3 rounded-2xl text-xs font-black transition-all text-slate-500">TIME OUT</button>
+                </div>
+
+                <div class="card p-6 space-y-5 mb-6">
+                    <div>
+                        <label class="block text-[10px] font-black text-slate-400 uppercase mb-2 ml-1">Grade & Section</label>
+                        <select id="section" class="w-full bg-slate-50 border border-slate-200 rounded-2xl px-4 py-4 text-sm font-bold text-blue-900 focus:ring-2 focus:ring-blue-500 outline-none">
+                            <option>Grade 7 - ALEXANDRITE</option>
+                            <option>Grade 7 - RUBY</option>
+                            <option>Grade 8 - AQUAMARINE</option>
+                            <option>Grade 8 - DIAMOND</option>
+                            <option>Grade 9 - AMETHYST</option>
+                            <option>Grade 9 - MOONSTONE</option>
+                            <option>Grade 10 - EMERALD</option>
+                            <option>Grade 10 - JADE</option>
+                            <option>Grade 11 - ABM</option>
+                            <option>Grade 11 - HUMSS</option>
+                            <option>Grade 11 - TVL</option>
+                            <option>Grade 12 - ABM</option>
+                            <option>Grade 12 - HUMSS</option>
+                            <option>Grade 12 - TVL</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-[10px] font-black text-slate-400 uppercase mb-2 ml-1">Subject</label>
+                        <select id="subject" class="w-full bg-slate-50 border border-slate-200 rounded-2xl px-4 py-4 text-sm font-bold text-blue-900 focus:ring-2 focus:ring-blue-500 outline-none">
+                            <option>ENGLISH</option>
+                            <option>MATHEMATICS</option>
+                            <option>SCIENCE</option>
+                            <option>FILIPINO</option>
+                            <option>ARALING PANLIPUNAN</option>
+                            <option>MAPEH</option>
+                            <option>TLE</option>
+                            <option>VALUES EDUCATION</option>
+                        </select>
+                    </div>
+                </div>
+
+                <button onclick="initCamera()" class="btn-press w-full py-5 bg-blue-600 hover:bg-blue-700 text-white font-black rounded-3xl shadow-xl transition-all flex items-center justify-center gap-3 uppercase tracking-widest text-sm">
+                    Open Scanner
+                </button>
+            </div>
+
+            <div id="scanner-view" class="hidden fixed inset-0 bg-black z-[200] flex flex-col items-center justify-center">
+                <video id="video" class="absolute inset-0 w-full h-full object-cover"></video>
+                <canvas id="canvas" class="hidden"></canvas>
+                <div class="scanner-overlay"></div>
+                <button onclick="stopCamera()" class="absolute top-12 right-6 z-[50] bg-white/10 backdrop-blur-xl p-3 rounded-full text-white">✕</button>
+                <div class="scanner-container">
+                    <div class="corner-bracket top-0 left-0 border-r-0 border-b-0 rounded-tl-3xl"></div>
+                    <div class="corner-bracket top-0 right-0 border-l-0 border-b-0 rounded-tr-3xl"></div>
+                    <div class="corner-bracket bottom-0 left-0 border-r-0 border-t-0 rounded-bl-3xl"></div>
+                    <div class="corner-bracket bottom-0 right-0 border-l-0 border-t-0 rounded-br-3xl"></div>
+                    <div class="scan-laser"></div>
+                </div>
+            </div>
+        </div>
+
+        <div id="modal" class="hidden fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[300] flex items-end">
+            <div class="bg-white w-full rounded-t-[40px] p-8 shadow-2xl">
+                <div class="w-12 h-1.5 bg-slate-200 rounded-full mx-auto mb-8"></div>
+                <h2 class="text-2xl font-black text-blue-900 mb-6 text-center">Scan Successful</h2>
+                <div class="p-5 bg-blue-50 rounded-3xl mb-10">
+                    <span class="text-[10px] font-black text-blue-400 uppercase tracking-wider">ID Data</span>
+                    <div id="qr-result" class="text-xl font-black text-blue-900 mt-1 break-all">--</div>
+                </div>
+                <div class="flex gap-4 mb-6">
+                    <button onclick="closeModal()" class="flex-1 py-5 bg-slate-100 text-slate-500 font-black rounded-3xl btn-press uppercase text-xs">Retry</button>
+                    <button id="confirm-btn" onclick="sendData()" class="flex-2 w-[60%] py-5 bg-blue-600 text-white font-black rounded-3xl shadow-lg uppercase tracking-widest btn-press text-xs">Submit</button>
+                </div>
+            </div>
+        </div>
+
+        <nav class="bottom-nav">
+            <div class="nav-item active" onclick="location.reload()">
+                <svg class="nav-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"></path></svg>
+                Home
+            </div>
+            <div class="nav-item" onclick="window.open('monitor.html', '_blank')">
+                <svg class="nav-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"></path></svg>
+                Monitor
+            </div>
+            <div class="nav-item logout-color" onclick="logout()">
+                <svg class="nav-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"></path></svg>
+                Logout
+            </div>
+        </nav>
+    </div>
+
+    <script>
+        const AUTHORIZED_USERS = { 
+            "admin": "wcgnhs2026"
+        };
+        const WEB_APP_URL = "PASTE_YOUR_GOOGLE_APP_SCRIPT_HERE";
+
+        // --- Fullscreen Utility ---
+        function enterFullscreen() {
+            const doc = document.documentElement;
+            if (doc.requestFullscreen) doc.requestFullscreen();
+            else if (doc.webkitRequestFullscreen) doc.webkitRequestFullscreen();
+            else if (doc.msRequestFullscreen) doc.msRequestFullscreen();
+        }
+
+        function checkAuth() {
+            const loggedUser = sessionStorage.getItem("terminal_user");
+            if (loggedUser) {
+                document.getElementById('login-overlay').classList.add('hidden');
+                document.getElementById('app-content').style.display = 'block';
+                document.getElementById('active-user-display').innerText = "Logged in: " + loggedUser;
+            }
+        }
+
+        function handleLogin() {
+            const user = document.getElementById('user-input').value.trim();
+            const pass = document.getElementById('pass-input').value.trim();
+            if (AUTHORIZED_USERS[user] && AUTHORIZED_USERS[user] === pass) {
+                // Enter fullscreen on successful click (gesture requirement)
+                enterFullscreen();
+                sessionStorage.setItem("terminal_user", user);
+                checkAuth();
+            } else { 
+                document.getElementById('login-error').classList.remove('hidden'); 
+            }
+        }
+
+        function logout() { 
+            sessionStorage.removeItem("terminal_user"); 
+            if (document.fullscreenElement) {
+                document.exitFullscreen();
+            }
+            location.reload(); 
+        }
+
+        let currentStatus = "Time In", scanning = false, qrData = null;
+        const video = document.getElementById('video'), canvasElement = document.getElementById('canvas'), canvas = canvasElement.getContext('2d');
+
+        function setStatus(s) {
+            currentStatus = s;
+            document.getElementById('btn-in').className = s === 'Time In' ? "flex-1 py-3 rounded-2xl text-xs font-black transition-all bg-white text-blue-600 shadow-sm" : "flex-1 py-3 rounded-2xl text-xs font-black transition-all text-slate-500";
+            document.getElementById('btn-out').className = s === 'Time Out' ? "flex-1 py-3 rounded-2xl text-xs font-black transition-all bg-white text-blue-600 shadow-sm" : "flex-1 py-3 rounded-2xl text-xs font-black transition-all text-slate-500";
+        }
+
+        async function initCamera() {
+            document.getElementById('scanner-view').classList.remove('hidden');
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
+                video.srcObject = stream;
+                video.setAttribute("playsinline", true);
+                video.play();
+                scanning = true;
+                requestAnimationFrame(tick);
+            } catch (err) { alert("Camera Error"); }
+        }
+
+        function stopCamera() {
+            scanning = false;
+            if (video.srcObject) video.srcObject.getTracks().forEach(track => track.stop());
+            document.getElementById('scanner-view').classList.add('hidden');
+        }
+
+        function tick() {
+            if (video.readyState === video.HAVE_ENOUGH_DATA && scanning) {
+                canvasElement.width = video.videoWidth; canvasElement.height = video.videoHeight;
+                canvas.drawImage(video, 0, 0, canvasElement.width, canvasElement.height);
+                const code = jsQR(canvas.getImageData(0, 0, canvasElement.width, canvasElement.height).data, canvasElement.width, canvasElement.height);
+                if (code) { qrData = code.data; showModal(); }
+            }
+            if (scanning) requestAnimationFrame(tick);
+        }
+
+        function showModal() { scanning = false; document.getElementById('qr-result').innerText = qrData; document.getElementById('modal').classList.remove('hidden'); }
+        function closeModal() { document.getElementById('modal').classList.add('hidden'); qrData = null; setTimeout(() => { scanning = true; tick(); }, 1000); }
+
+        async function sendData() {
+            const btn = document.getElementById('confirm-btn');
+            btn.disabled = true;
+            btn.innerText = "RECORDING...";
+            const payload = {
+                studentId: qrData,
+                status: currentStatus,
+                section: document.getElementById('section').value,
+                subject: document.getElementById('subject').value,
+                recordedBy: sessionStorage.getItem("terminal_user")
+            };
+            try {
+                await fetch(WEB_APP_URL, { method: "POST", mode: "no-cors", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+                alert("Successfully recorded!");
+                btn.disabled = false; btn.innerText = "SUBMIT";
+                closeModal(); stopCamera();
+            } catch (err) {
+                alert("Recording failed.");
+                btn.disabled = false; btn.innerText = "SUBMIT";
+            }
+        }
+    </script>
+</body>
+</html>
